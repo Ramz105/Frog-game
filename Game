@@ -1,0 +1,672 @@
+import os
+import random
+import math
+import pygame
+from os import listdir
+from os.path import isfile, join
+pygame.init()
+
+pygame.display.set_caption("Platformer")
+
+WIDTH, HEIGHT = 1000, 800
+FPS = 60
+PLAYER_VEL = 5
+
+window = pygame.display.set_mode((WIDTH, HEIGHT))
+
+
+def flip(sprites):
+    return [pygame.transform.flip(sprite, True, False) for sprite in sprites]
+
+
+def load_sprite_sheets(dir1, dir2, width, height, direction=False):
+    path = join("assets", dir1, dir2)
+    images = [f for f in listdir(path) if isfile(join(path, f))]
+
+    all_sprites = {}
+
+    for image in images:
+        sprite_sheet = pygame.image.load(join(path, image)).convert_alpha()
+
+        sprites = []
+        for i in range(sprite_sheet.get_width() // width):
+            surface = pygame.Surface((width, height), pygame.SRCALPHA, 32)
+            rect = pygame.Rect(i * width, 0, width, height)
+            surface.blit(sprite_sheet, (0, 0), rect)
+            sprites.append(pygame.transform.scale2x(surface))
+
+        if direction:
+            all_sprites[image.replace(".png", "") + "_right"] = sprites
+            all_sprites[image.replace(".png", "") + "_left"] = flip(sprites)
+        else:
+            all_sprites[image.replace(".png", "")] = sprites
+
+    return all_sprites
+
+
+def get_block(section="middle", platform=False):
+    path = join("assets", "Terrain", "TX Tileset Ground.png")  
+    image = pygame.image.load(path).convert_alpha()
+
+    
+    tile_width, tile_height = 32, 32  
+
+    
+    if platform:
+        if section == "left":
+            rect = pygame.Rect(tile_width * 0, tile_height * 3, tile_width, tile_height)  
+        elif section == "middle":
+            rect = pygame.Rect(tile_width * 1, tile_height * 3, tile_width, tile_height)  
+        elif section == "right":
+            rect = pygame.Rect(tile_width * 2, tile_height * 3, tile_width, tile_height)  
+        else:
+            raise ValueError("Invalid section. Choose from 'left', 'middle', or 'right'.")
+    else:
+        if section == "left":
+            rect = pygame.Rect(0, 0, tile_width, tile_height)  
+        elif section == "middle":
+            rect = pygame.Rect(tile_width, 0, tile_width, tile_height)  
+        elif section == "right":
+            rect = pygame.Rect(tile_width * 2, 0, tile_width, tile_height)  
+        else:
+            raise ValueError("Invalid section. Choose from 'left', 'middle', or 'right'.")
+
+    
+    surface = pygame.Surface((tile_width, tile_height), pygame.SRCALPHA, 32)
+    surface.blit(image, (0, 0), rect)
+
+    
+    block_size = 64  
+    return pygame.transform.scale(surface, (block_size, block_size)), block_size, block_size
+
+
+def load_props(prop_name):
+    path = join("assets", "Props", f"{prop_name}.png")  
+    prop_image = pygame.image.load(path).convert_alpha()
+
+    
+    prop_size = 64  
+    prop = pygame.transform.scale(prop_image, (prop_size, prop_size))
+
+    return prop
+
+
+def load_tree():
+    path = join("assets", "Props", "Tree.png")  
+    tree_image = pygame.image.load(path).convert_alpha()
+
+    
+    tree_size = 300  
+    tree = pygame.transform.scale(tree_image, (tree_size, tree_size))
+
+    return tree
+
+
+def load_tree2():
+    path = join("assets", "Props", "Tree2.png")  
+    tree2_image = pygame.image.load(path).convert_alpha()
+
+    
+    tree2_size = 162 
+    tree2 = pygame.transform.scale(tree2_image, (tree2_size, tree2_size))
+
+    return tree2
+
+
+def load_bush():
+    path = join("assets", "Props", "Bush.png")  
+    bush_image = pygame.image.load(path).convert_alpha()
+
+    
+    bush_width = 80  
+    bush_height = 50  
+    bush = pygame.transform.scale(bush_image, (bush_width, bush_height))
+
+    return bush
+
+
+def load_box():
+    path = join("assets", "Props", "Box.png")  
+    box_image = pygame.image.load(path).convert_alpha()
+
+    
+    box_size = 48  
+    box = pygame.transform.scale(box_image, (box_size, box_size))
+
+    return box
+
+
+def load_lamp():
+    path = join("assets", "Props", "Lamp.png")  
+    lamp_image = pygame.image.load(path).convert_alpha()
+
+    
+    lamp_size = 32  
+    lamp = pygame.transform.scale(lamp_image, (lamp_size, lamp_size))
+
+    return lamp
+
+
+def load_menu_button():
+    path = join("assets", "Menu", "Buttons", "Play.png")  
+    button_image = pygame.image.load(path).convert_alpha()
+
+    
+    button_size = 32  
+    button = pygame.transform.scale(button_image, (button_size, button_size))
+
+    return button
+
+
+def load_flag_sprites():
+    path = join("assets", "Finish", "Checkpoint (Flag Idle)(64x64).png")  
+    flag_sheet = pygame.image.load(path).convert_alpha()
+
+    
+    frame_width, frame_height = 64, 64
+    num_frames = flag_sheet.get_width() // frame_width
+
+    
+    flag_frames = []
+    for i in range(num_frames):
+        frame_surface = pygame.Surface((frame_width, frame_height), pygame.SRCALPHA, 32)
+        frame_rect = pygame.Rect(i * frame_width, 0, frame_width, frame_height)
+        frame_surface.blit(flag_sheet, (0, 0), frame_rect)
+        flag_frames.append(frame_surface)
+
+    return flag_frames
+
+
+def blur_surface(surface, amount):
+    """Apply a blur effect to a surface."""
+    scale = 1 / amount
+    small_surface = pygame.transform.smoothscale(surface, (int(surface.get_width() * scale), int(surface.get_height() * scale)))
+    return pygame.transform.smoothscale(small_surface, surface.get_size())
+
+
+def menu(window):
+    clock = pygame.time.Clock()
+    button = load_menu_button()
+
+    
+    background, bg_image = get_background("Blue.png")
+    blurred_bg = blur_surface(bg_image, 10)  
+
+    
+    button_x = WIDTH // 2 - button.get_width() // 2
+    button_y = HEIGHT // 2 - button.get_height() // 2
+    button_rect = pygame.Rect(button_x, button_y, button.get_width(), button.get_height())
+
+    run = True
+    while run:
+        clock.tick(FPS)
+        window.fill((0, 0, 0))  
+
+        
+        for tile in background:
+            window.blit(blurred_bg, tile)
+
+        
+        window.blit(button, (button_x, button_y))
+
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if button_rect.collidepoint(event.pos):  
+                    run = False  
+
+        pygame.display.update()
+
+
+def post_game_menu(window):
+    clock = pygame.time.Clock()
+
+    
+    close_button_image = pygame.image.load(join("assets", "Menu", "Buttons", "Close.png")).convert_alpha()
+    restart_button_image = pygame.image.load(join("assets", "Menu", "Buttons", "Restart.png")).convert_alpha()
+    next_button_image = pygame.image.load(join("assets", "Menu", "Buttons", "Next.png")).convert_alpha()
+
+    
+    button_size = 32
+    close_button = pygame.transform.scale(close_button_image, (button_size, button_size))
+    restart_button = pygame.transform.scale(restart_button_image, (button_size, button_size))
+    next_button = pygame.transform.scale(next_button_image, (button_size, button_size))
+
+    
+    total_width = button_size * 3 + 20 * 2  
+    start_x = WIDTH // 2 - total_width // 2 
+    button_y = HEIGHT // 2  
+
+    close_button_x = start_x
+    next_button_x = close_button_x + button_size + 20  
+    restart_button_x = next_button_x + button_size + 20
+
+    
+    close_button_rect = pygame.Rect(close_button_x, button_y, button_size, button_size)
+    next_button_rect = pygame.Rect(next_button_x, button_y, button_size, button_size)
+    restart_button_rect = pygame.Rect(restart_button_x, button_y, button_size, button_size)
+
+    
+    background, bg_image = get_background("Blue.png")
+    blurred_bg = blur_surface(bg_image, 10)  
+
+    run = True
+    while run:
+        clock.tick(FPS)
+        window.fill((0, 0, 0))  
+
+        
+        for tile in background:
+            window.blit(blurred_bg, tile)
+
+        
+        window.blit(close_button, (close_button_x, button_y))
+        window.blit(next_button, (next_button_x, button_y))
+        window.blit(restart_button, (restart_button_x, button_y))
+
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if close_button_rect.collidepoint(event.pos):  
+                    return "exit"
+                if next_button_rect.collidepoint(event.pos):  
+                    return "next"
+                if restart_button_rect.collidepoint(event.pos):  
+                    return "restart"
+
+        pygame.display.update()
+
+
+class Player(pygame.sprite.Sprite):
+    COLOR = (255, 0, 0)
+    GRAVITY = 1
+    SPRITES = load_sprite_sheets("MainCharacter", "NinjaFrog", 32, 32, True)
+    ANIMATION_DELAY = 3
+
+    def __init__(self, x, y, width, height):
+        super().__init__()
+        self.rect = pygame.Rect(x, y, width, height)
+        self.x_vel = 0
+        self.y_vel = 0
+        self.mask = None
+        self.direction = "left"
+        self.animation_count = 0
+        self.fall_count = 0
+        self.jump_count = 0
+        self.hit = False
+        self.hit_count = 0
+
+    def jump(self):
+        self.y_vel = -self.GRAVITY * 8
+        self.animation_count = 0
+        self.jump_count += 1
+        if self.jump_count == 1:
+            self.fall_count = 0
+
+    def move(self, dx, dy):
+        self.rect.x += dx
+        self.rect.y += dy
+
+    def make_hit(self):
+        self.hit = True
+
+    def move_left(self, vel):
+        self.x_vel = -vel
+        if self.direction != "left":
+            self.direction = "left"
+            self.animation_count = 0
+
+    def move_right(self, vel):
+        self.x_vel = vel
+        if self.direction != "right":
+            self.direction = "right"
+            self.animation_count = 0
+
+    def loop(self, fps):
+        self.y_vel += min(1, (self.fall_count / fps) * self.GRAVITY)
+        self.move(self.x_vel, self.y_vel)
+
+        if self.hit:
+            self.hit_count += 1
+        if self.hit_count > fps * 2:
+            self.hit = False
+            self.hit_count = 0
+
+        self.fall_count += 1
+        self.update_sprite()
+
+    def landed(self):
+        self.fall_count = 0
+        self.y_vel = 0
+        self.jump_count = 0
+
+    def hit_head(self):
+        self.count = 0
+        self.y_vel *= -1
+
+    def update_sprite(self):
+        sprite_sheet = "idle"
+        if self.hit:
+            sprite_sheet = "hit"
+        elif self.y_vel < 0:
+            if self.jump_count == 1:
+                sprite_sheet = "jump"
+            elif self.jump_count == 2:
+                sprite_sheet = "double_jump"
+        elif self.y_vel > self.GRAVITY * 2:
+            sprite_sheet = "fall"
+        elif self.x_vel != 0:
+            sprite_sheet = "run"
+
+        sprite_sheet_name = sprite_sheet + "_" + self.direction
+        sprites = self.SPRITES[sprite_sheet_name]
+        sprite_index = (self.animation_count //
+                        self.ANIMATION_DELAY) % len(sprites)
+        self.sprite = sprites[sprite_index]
+        self.animation_count += 1
+        self.update()
+
+    def update(self):
+        self.rect = self.sprite.get_rect(topleft=(self.rect.x, self.rect.y))
+        self.mask = pygame.mask.from_surface(self.sprite)
+
+    def draw(self, win, offset_x, offset_y):
+        win.blit(self.sprite, (self.rect.x - offset_x, self.rect.y - offset_y))
+
+
+class Object(pygame.sprite.Sprite):
+    def __init__(self, x, y, width, height, name=None):
+        super().__init__()
+        self.rect = pygame.Rect(x, y, width, height)
+        self.image = pygame.Surface((width, height), pygame.SRCALPHA)
+        self.width = width
+        self.height = height
+        self.name = name
+
+    def draw(self, win, offset_x, offset_y):
+        win.blit(self.image, (self.rect.x - offset_x, self.rect.y - offset_y))
+
+
+class Block(Object):
+    def __init__(self, x, y, section="middle", platform=False):
+        
+        block, block_width, block_height = get_block(section, platform)
+        super().__init__(x, y, block_width, block_height)
+        self.image.blit(block, (0, 0))
+        self.mask = pygame.mask.from_surface(self.image)
+
+
+class Fire(Object):
+    ANIMATION_DELAY = 3
+
+    def __init__(self, x, y, width, height):
+        super().__init__(x, y, width, height, "fire")
+        self.fire = load_sprite_sheets("Traps", "Fire", width, height)
+        self.image = self.fire["off"][0]
+        self.mask = pygame.mask.from_surface(self.image)
+        self.animation_count = 0
+        self.animation_name = "off"
+
+    def on(self):
+        self.animation_name = "on"
+
+    def off(self):
+        self.animation_name = "off"
+
+    def loop(self):
+        sprites = self.fire[self.animation_name]
+        sprite_index = (self.animation_count //
+                        self.ANIMATION_DELAY) % len(sprites)
+        self.image = sprites[sprite_index]
+        self.animation_count += 1
+
+        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
+        self.mask = pygame.mask.from_surface(self.image)
+
+        if self.animation_count // self.ANIMATION_DELAY > len(sprites):
+            self.animation_count = 0
+
+
+class AnimatedFlag:
+    ANIMATION_DELAY = 5  
+
+    def __init__(self, x, y):
+        self.frames = load_flag_sprites()
+        self.current_frame = 0
+        self.x = x
+        self.y = y
+        self.animation_count = 0
+
+    def draw(self, window, offset_x, offset_y):
+        
+        if not self.frames or self.current_frame >= len(self.frames):
+            self.current_frame = 0  
+
+        
+        frame = self.frames[self.current_frame]
+        window.blit(frame, (self.x - offset_x, self.y - offset_y))
+
+        
+        self.animation_count += 1
+        if self.animation_count >= self.ANIMATION_DELAY:
+            self.animation_count = 0
+            self.current_frame = (self.current_frame + 1) % len(self.frames)  
+
+
+def get_background(name):
+    image = pygame.image.load(join("assets", "Background", name))
+    _, _, width, height = image.get_rect()
+    tiles = []
+
+    for i in range(WIDTH // width + 1):
+        for j in range(HEIGHT // height + 1):
+            pos = (i * width, j * height)
+            tiles.append(pos)
+
+    return tiles, image
+
+
+def draw(window, background, bg_image, player, objects, props, offset_y):
+    
+    for tile in background:
+        if tile[1] - offset_y < HEIGHT and tile[1] - offset_y + bg_image.get_height() > 0:
+            window.blit(bg_image, (tile[0], tile[1] - offset_y))  
+
+    
+    for obj in objects:
+        obj.draw(window, 0, offset_y)  
+
+    
+    for prop in props:
+        window.blit(prop["image"], (prop["x"], prop["y"] - offset_y))  
+
+    
+    player.draw(window, 0, offset_y)  
+
+    pygame.display.update()
+
+
+def handle_vertical_collision(player, objects, dy):
+    collided_objects = []
+    for obj in objects:
+        if pygame.sprite.collide_mask(player, obj):
+            if dy > 0:
+                player.rect.bottom = obj.rect.top
+                player.landed()
+            elif dy < 0:
+                player.rect.top = obj.rect.bottom
+                player.hit_head()
+
+            collided_objects.append(obj)
+
+    return collided_objects
+
+
+def collide(player, objects, dx):
+    player.move(dx, 0)
+    player.update()
+    collided_object = None
+    for obj in objects:
+        if pygame.sprite.collide_mask(player, obj):
+            collided_object = obj
+            break
+
+    player.move(-dx, 0)
+    player.update()
+    return collided_object
+
+
+def handle_move(player, objects):
+    keys = pygame.key.get_pressed()
+
+    player.x_vel = 0
+    collide_left = collide(player, objects, -PLAYER_VEL * 2)
+    collide_right = collide(player, objects, PLAYER_VEL * 2)
+
+    if keys[pygame.K_LEFT] and not collide_left:
+        player.move_left(PLAYER_VEL)
+    if keys[pygame.K_RIGHT] and not collide_right:
+        player.move_right(PLAYER_VEL)
+
+    
+    if player.rect.left < 0:  
+        player.rect.left = 0
+    if player.rect.right > WIDTH:  
+        player.rect.right = WIDTH
+
+    vertical_collide = handle_vertical_collision(player, objects, player.y_vel)
+    to_check = [collide_left, collide_right, *vertical_collide]
+
+    for obj in to_check:
+        if obj and obj.name == "fire":
+            player.make_hit()
+
+
+def main(window):
+    clock = pygame.time.Clock()
+    print("Clock initialized successfully!")
+    background, bg_image = get_background("Blue.png")
+
+    
+    _, block_width, block_height = get_block()
+
+    player = Player(100, HEIGHT - block_height - 50, 50, 50)
+
+    
+    ground = [
+        Block(-block_width, HEIGHT - block_height, "left"),  
+        *[Block(i * block_width, HEIGHT - block_height, "middle")   
+          for i in range(0, WIDTH // block_width + 1)],
+        Block(WIDTH, HEIGHT - block_height, "right")  
+    ]
+
+    
+    platforms = [
+        
+        Block(block_width * 5, HEIGHT - block_height * 4, "left"),  
+        Block(block_width * 6, HEIGHT - block_height * 4, "middle"),  
+        Block(block_width * 7, HEIGHT - block_height * 4, "right"),  
+
+        
+        Block(block_width * 8, HEIGHT - block_height * 7, "left"),  
+        Block(block_width * 9, HEIGHT - block_height * 7, "middle"),  
+        Block(block_width * 10, HEIGHT - block_height * 7, "right"),  
+
+        
+        Block(block_width * 11, HEIGHT - block_height * 10, "left"),  
+        Block(block_width * 12, HEIGHT - block_height * 10, "middle"),  
+        Block(block_width * 13, HEIGHT - block_height * 10, "right"),  
+    ]
+
+    
+    objects = ground + platforms
+
+    
+    tree = load_tree()  
+    tree2 = load_tree2()  
+    bush = load_bush()  
+    box = load_box()    
+    lamp = load_lamp()  
+    props = [
+        {"image": tree, "x": block_width * 11, "y": HEIGHT - block_height - 278}, 
+        {"image": tree2, "x": block_width * 0, "y": HEIGHT - block_height - 162},  
+        {"image": bush, "x": block_width * 11, "y": HEIGHT - block_height - 50},  
+        {"image": box, "x": block_width * 10, "y": HEIGHT - block_height - 48},  
+        {"image": lamp, "x": block_width * 10, "y": HEIGHT - block_height - 71},  
+    ]
+
+    
+    flag = AnimatedFlag(
+        block_width * 13,  
+        HEIGHT - block_height * 11  
+    )
+
+    offset_y = 0  
+    scroll_trigger_height = HEIGHT // 2  
+
+    run = True
+    while run:
+        clock.tick(FPS)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+                break
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE and player.jump_count < 2:
+                    player.jump()
+
+        player.loop(FPS)
+        handle_move(player, objects)
+
+        
+        if player.rect.top < scroll_trigger_height + offset_y:
+            offset_y -= (scroll_trigger_height + offset_y - player.rect.top)
+
+        
+        max_offset_y = max(0, max(obj.rect.bottom for obj in objects) - HEIGHT)
+        offset_y = max(0, min(offset_y, max_offset_y))
+
+        
+        flag_hitbox_width = 48  
+        flag_hitbox_height = 48  
+        flag_rect = pygame.Rect(
+            flag.x + (64 - flag_hitbox_width) // 2,  
+            flag.y + (64 - flag_hitbox_height) // 2,  
+            flag_hitbox_width,
+            flag_hitbox_height
+        )
+        if player.rect.colliderect(flag_rect):  
+            print("You Win!")  
+            result = post_game_menu(window)  
+            if result == "restart":
+                main(window)  
+            elif result == "exit":
+                run = False  
+            elif result == "next":
+                print("Next Level!")  
+
+        
+        draw(window, background, bg_image, player, objects, props, offset_y)
+
+        
+        flag.draw(window, 0, offset_y)
+
+        pygame.display.update()
+
+    pygame.quit()
+    quit()
+
+
+if __name__ == "__main__":
+    menu(window)  
+    main(window)  
